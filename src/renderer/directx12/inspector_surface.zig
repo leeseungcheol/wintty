@@ -217,9 +217,14 @@ pub fn beginPresentFrame(self: *State) !struct {
 
     const wait_value = frame.fence_value;
     if (self.dev.fence.GetCompletedValue() < wait_value) {
-        const hr = self.dev.fence.SetEventOnCompletion(wait_value, self.dev.fence_event);
-        if (FAILED(hr)) return error.FrameSyncFailed;
-        _ = d3d12.WaitForSingleObject(self.dev.fence_event, d3d12.INFINITE);
+        // device.waitFenceValue revalidates the fence value after every
+        // wake: a signal proves one registration fired, and only the fence
+        // value proves the GPU is done reading this back buffer. The
+        // present wait holds its own event on the inspector's device, so a
+        // wake delivered here is never one another same-device waiter ran
+        // off with.
+        device.waitFenceValue(self.dev.fence, self.dev.present_fence_event, wait_value) catch
+            return error.FrameSyncFailed;
     }
 
     try frame.reset();
