@@ -427,6 +427,17 @@ internal sealed partial class ConfigService : IConfigService, Ghostty.Core.Profi
         ?? Ghostty.Core.Input.QuickTerminalKeyChord.Default;
 
     /// <summary>
+    /// Fixed remote folder for images pasted into an ssh pane, or null to
+    /// use the shell's folder. Wintty-only key, read from the raw config
+    /// file, falling back to the WINTTY_SSH_IMAGE_PASTE_DIRECTORY
+    /// environment variable. Read at each paste, so no restart is needed.
+    /// </summary>
+    public string? SshImagePasteDirectory =>
+        Ghostty.Core.Ssh.ClipboardImageUpload.ConfiguredDirectory(
+            GetFileValue(Ghostty.Core.Ssh.ClipboardImageUpload.ConfigKey, ""),
+            Environment.GetEnvironmentVariable(Ghostty.Core.Ssh.ClipboardImageUpload.EnvironmentVariable));
+
+    /// <summary>
     /// Parsed light theme name from a conditional theme pair, or null
     /// if the theme is a single (non-conditional) value.
     /// </summary>

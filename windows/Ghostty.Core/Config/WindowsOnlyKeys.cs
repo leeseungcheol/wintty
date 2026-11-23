@@ -69,6 +69,8 @@ public static class WindowsOnlyKeys
             "When true, every Host alias in your ~/.ssh/config and every named host in your ~/.ssh/known_hosts becomes a new-tab profile (id ssh-<host>) that runs ssh to it. Off by default; hashed, wildcard and IP-only entries are skipped. Saved connections (ssh.<id>.host and friends) are always listed."),
         new("ssh-hosts-user",
             "Login used for the ssh-hosts-discovery profiles (ssh <user>@<host>). Unset lets ssh choose: your ~/.ssh/config, else your Windows user name."),
+        new("ssh-image-paste-directory",
+            "Remote folder (e.g. ~/tmp/png) where Ctrl+Shift+V in an ssh pane saves a clipboard image, created if missing; its path is typed at the prompt. Unset uses the shell's folder, asking when it is unknown. Falls back to the WINTTY_SSH_IMAGE_PASTE_DIRECTORY environment variable."),
         new("no-color-override",
             "How Wintty reacts to a NO_COLOR value inherited from the environment: notify (default -- honor NO_COLOR but show a one-time notice offering to enable color), strip (enable color by removing NO_COLOR from spawned shells), or keep (honor NO_COLOR silently)."),
         new("windows-single-instance",

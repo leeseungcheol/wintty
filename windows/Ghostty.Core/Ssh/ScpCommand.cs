@@ -71,6 +71,36 @@ public static class ScpCommand
         return args;
     }
 
+    /// <summary>
+    /// <c>ssh</c> arguments that create <paramref name="remoteDirectory"/> and
+    /// its parents on the host (<c>mkdir -p</c>). Prompts are forbidden: it
+    /// runs hidden, before an upload into a folder that may not exist yet.
+    /// The folder comes from the user's own config, and is single quoted
+    /// for the remote shell all the same.
+    /// </summary>
+    public static IReadOnlyList<string> MakeDirectory(SshTarget target, string remoteDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (!RemotePath.IsValid(remoteDirectory)) throw new ArgumentException("invalid remote directory", nameof(remoteDirectory));
+
+        var args = new List<string> { "-o", "BatchMode=yes" };
+        if (target.Port is { } port)
+        {
+            args.Add("-p");
+            args.Add(port.ToString(CultureInfo.InvariantCulture));
+        }
+        if (target.User is { } user)
+        {
+            args.Add("-l");
+            args.Add(user);
+        }
+        args.AddRange(target.PassThrough);
+        args.Add("--");
+        args.Add(target.Destination);
+        args.Add("mkdir -p -- " + ClipboardImageUpload.PromptText(remoteDirectory));
+        return args;
+    }
+
     private static List<string> Common(SshTarget target, bool recursive, bool batch)
     {
         var args = new List<string> { "-s" };
