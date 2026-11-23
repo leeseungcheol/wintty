@@ -12,6 +12,31 @@ namespace Ghostty.Core.Ssh;
 /// </summary>
 public static class ClipboardImageUpload
 {
+    /// <summary>Config key naming a fixed remote folder for pasted images.</summary>
+    public const string ConfigKey = "ssh-image-paste-directory";
+
+    /// <summary>
+    /// Windows environment variable read when <see cref="ConfigKey"/> is unset.
+    /// </summary>
+    public const string EnvironmentVariable = "WINTTY_SSH_IMAGE_PASTE_DIRECTORY";
+
+    /// <summary>
+    /// The remote folder every pasted image goes to, or null to use the
+    /// shell's folder (and ask when it is unknown). The config key wins
+    /// over the environment variable; a blank or invalid value counts as
+    /// unset. Trailing slashes are dropped, except on <c>/</c> itself.
+    /// </summary>
+    public static string? ConfiguredDirectory(string? configValue, string? environmentValue)
+        => Normalize(configValue) ?? Normalize(environmentValue);
+
+    private static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        while (v.Length > 1 && v.EndsWith('/')) v = v[..^1];
+        return RemotePath.IsValid(v) ? v : null;
+    }
+
     /// <summary>
     /// The file name for an image pasted at <paramref name="now"/>. Down
     /// to the millisecond, so two pastes in one second do not overwrite
@@ -29,6 +54,8 @@ public static class ClipboardImageUpload
     public static string PromptText(string remotePath)
     {
         ArgumentNullException.ThrowIfNull(remotePath);
+        // Home itself: quoted, '~' would name a folder called ~.
+        if (remotePath == "~") return "~";
 
         var prefix = "";
         var rest = remotePath;

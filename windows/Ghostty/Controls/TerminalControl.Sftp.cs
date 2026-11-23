@@ -214,8 +214,21 @@ public sealed partial class TerminalControl
             var local = Path.Combine(folder, name);
             await SaveClipboardBitmapAsPngAsync(view, local);
 
-            var directory = RemoteDirectoryGuess
-                ?? await SftpDialogs.AskUploadAsync(XamlRoot, target, [local], guessedDirectory: null);
+            // A folder set in the config (ssh-image-paste-directory) takes
+            // every image, wherever the shell is, so pasted images collect
+            // in one place that is easy to clear. It may not exist yet.
+            // Without one: the shell's folder, else ask.
+            string? directory;
+            if (App.ConfigService?.SshImagePasteDirectory is { } configured)
+            {
+                if (!await SftpTransfers.EnsureRemoteDirectoryAsync(target, configured)) return;
+                directory = configured;
+            }
+            else
+            {
+                directory = RemoteDirectoryGuess
+                    ?? await SftpDialogs.AskUploadAsync(XamlRoot, target, [local], guessedDirectory: null);
+            }
             if (directory is null) return;
             if (!App.WindowsByRoot.TryGetValue(XamlRoot, out var window)) return;
 

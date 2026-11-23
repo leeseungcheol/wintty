@@ -170,11 +170,54 @@ internal static class SftpTransfers
 
     private readonly record struct ScpResult(int ExitCode, string Stderr, bool Canceled);
 
-    private static async Task<ScpResult> RunScpAsync(IReadOnlyList<string> args, CancellationToken ct)
+    /// <summary>
+    /// Windows' own OpenSSH <c>ssh.exe</c>, found the same way as
+    /// <see cref="ScpPath"/>.
+    /// </summary>
+    internal static string SshPath
+    {
+        get
+        {
+            var system = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System), "OpenSSH", "ssh.exe");
+            return File.Exists(system) ? system : "ssh.exe";
+        }
+    }
+
+    /// <summary>
+    /// Create <paramref name="remoteDirectory"/> (and its parents) on the
+    /// host, hidden and without prompts. False, with an error notice, when
+    /// it could not be made; a host that needs a password fails here too,
+    /// since there is no tab to answer it in.
+    /// </summary>
+    public static async Task<bool> EnsureRemoteDirectoryAsync(SshTarget target, string remoteDirectory)
+    {
+        ScpResult result;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            result = await RunScpAsync(ScpCommand.MakeDirectory(target, remoteDirectory), cts.Token, SshPath);
+        }
+        catch (Exception ex)
+        {
+            result = new ScpResult(-1, ex.Message, Canceled: false);
+        }
+        if (result.ExitCode == 0 && !result.Canceled) return true;
+
+        App.NotificationService?.Show(new Notice
+        {
+            Title = $"Could not create {target.Display}:{remoteDirectory}",
+            Message = result.Canceled ? "The host did not answer in time." : ScpFailure.Summarize(result.Stderr),
+            Severity = NoticeSeverity.Error,
+        });
+        return false;
+    }
+
+    private static async Task<ScpResult> RunScpAsync(IReadOnlyList<string> args, CancellationToken ct, string? program = null)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = ScpPath,
+            FileName = program ?? ScpPath,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true,
