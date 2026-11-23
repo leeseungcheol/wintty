@@ -2398,6 +2398,17 @@ public sealed partial class TerminalControl : UserControl, ISearchHost
         // the visual border and clearing the tab indicator (matches macOS).
         AcknowledgeBell();
 
+        // Ctrl+Shift+V with only an image on the clipboard, in an ssh pane:
+        // upload it and type its path (TerminalControl.Sftp.cs). Anything
+        // else falls through to the ordinary paste. Its character is
+        // suppressed like a residual chord's, below.
+        if (TryPasteClipboardImageOverSsh(e.Key))
+        {
+            _suppressNextCharacter = true;
+            e.Handled = true;
+            return;
+        }
+
         // Windows-only residual match: a handful of chords have no
         // libghostty action (search-bar widget, vertical-tabs pin,
         // tab-layout switch, profile slots), so the apprt matches them

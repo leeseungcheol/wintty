@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Ghostty.Core.Profiles.Tracking;
@@ -8,6 +9,7 @@ using Ghostty.Interop;
 using Ghostty.Ssh;
 using Microsoft.UI.Xaml;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Graphics.Imaging;
 
 namespace Ghostty.Controls;
 
@@ -161,6 +163,108 @@ public sealed partial class TerminalControl
         }
     }
 
+    /// <summary>
+    /// Ctrl+Shift+V in an ssh pane while the clipboard holds an image and
+    /// no text: the image is saved as a .png, uploaded to the shell's
+    /// folder the way a dropped file is, and its remote path is typed at
+    /// the prompt. A program on the host (an AI coding tool, say) cannot
+    /// reach the Windows clipboard, so this is how it gets the image.
+    /// False leaves the key to the ordinary paste.
+    /// </summary>
+    private bool TryPasteClipboardImageOverSsh(Windows.System.VirtualKey key)
+    {
+        if (key != Windows.System.VirtualKey.V) return false;
+        const Windows.System.VirtualKeyModifiers chord =
+            Windows.System.VirtualKeyModifiers.Control | Windows.System.VirtualKeyModifiers.Shift;
+        if (CurrentChordModifiers() != chord) return false;
+        if (_surfaceDisposed || _surface.Handle == IntPtr.Zero) return false;
+
+        DataPackageView view;
+        try
+        {
+            view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            // Text wins: a copy from an app that also offers a picture of
+            // the text (Office, browsers) must paste as text.
+            if (!view.Contains(StandardDataFormats.Bitmap)
+                || view.Contains(StandardDataFormats.Text))
+                return false;
+        }
+        catch (Exception ex)
+        {
+            // The clipboard can be locked by another process for a moment.
+            System.Diagnostics.Debug.WriteLine($"[TerminalControl] clipboard read failed: {ex.Message}");
+            return false;
+        }
+
+        if (TryGetSshTarget() is not { } target) return false;
+
+        _ = UploadClipboardImageAsync(view, target);
+        return true;
+    }
+
+    private async Task UploadClipboardImageAsync(DataPackageView view, SshTarget target)
+    {
+        // Everything is contained: a failed paste cannot take the UI
+        // thread down.
+        try
+        {
+            var name = ClipboardImageUpload.FileName(DateTime.Now);
+            var folder = Path.Combine(Path.GetTempPath(), "wintty-paste");
+            Directory.CreateDirectory(folder);
+            var local = Path.Combine(folder, name);
+            await SaveClipboardBitmapAsPngAsync(view, local);
+
+            var directory = RemoteDirectoryGuess
+                ?? await SftpDialogs.AskUploadAsync(XamlRoot, target, [local], guessedDirectory: null);
+            if (directory is null) return;
+            if (!App.WindowsByRoot.TryGetValue(XamlRoot, out var window)) return;
+
+            // Only a finished upload is typed: a path to a file that is not
+            // there yet (or never will be) is worse than nothing.
+            if (!await SftpTransfers.UploadAsync(target, [local], directory, window.OpenCommandTab)) return;
+            try { File.Delete(local); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+
+            InsertText(ClipboardImageUpload.PromptText(RemotePath.Combine(directory, name)));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TerminalControl] image paste failed: {ex}");
+            App.NotificationService?.Show(new Ghostty.Core.Notifications.Notice
+            {
+                Title = "Could not paste the image",
+                Message = ex.Message,
+                Severity = Ghostty.Core.Notifications.NoticeSeverity.Error,
+            });
+        }
+    }
+
+    // The clipboard hands a bitmap in whatever format the source put
+    // there (a DIB from most apps); re-encode it so the host gets a PNG.
+    private static async Task SaveClipboardBitmapAsPngAsync(DataPackageView view, string path)
+    {
+        var reference = await view.GetBitmapAsync();
+        using var source = await reference.OpenReadAsync();
+        var decoder = await BitmapDecoder.CreateAsync(source);
+        using var bitmap = await decoder.GetSoftwareBitmapAsync(
+            BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight);
+
+        using var file = File.Create(path);
+        var encoder = await BitmapEncoder.CreateAsync(
+            BitmapEncoder.PngEncoderId, file.AsRandomAccessStream());
+        encoder.SetSoftwareBitmap(bitmap);
+        await encoder.FlushAsync();
+    }
+
+    private void InsertText(string text)
+    {
+        if (_surfaceDisposed || _surface.Handle == IntPtr.Zero || text.Length == 0) return;
+        var bytes = Encoding.UTF8.GetBytes(text);
+        unsafe
+        {
+            fixed (byte* p = bytes)
+                NativeMethods.SurfaceText(_surface, (IntPtr)p, (UIntPtr)bytes.Length);
+        }
+    }
     // Outside ssh, a dropped file becomes its path at the prompt, quoted
     // when it has to be -- what Windows Terminal and conhost do.
     private void InsertDroppedPaths(IReadOnlyList<string> paths)

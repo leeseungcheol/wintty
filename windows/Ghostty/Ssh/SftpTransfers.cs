@@ -41,7 +41,7 @@ internal static class SftpTransfers
         }
     }
 
-    public static Task UploadAsync(
+    public static Task<bool> UploadAsync(
         SshTarget target,
         IReadOnlyList<string> localPaths,
         string remoteDirectory,
@@ -65,7 +65,7 @@ internal static class SftpTransfers
             doneActions: Array.Empty<NoticeAction>());
     }
 
-    public static Task DownloadAsync(
+    public static Task<bool> DownloadAsync(
         SshTarget target,
         string remotePath,
         string localDirectory,
@@ -86,7 +86,11 @@ internal static class SftpTransfers
             ]);
     }
 
-    private static async Task RunAsync(
+    /// <summary>
+    /// True only when the hidden transfer finished. A transfer handed to a
+    /// visible tab is still running when this returns, so it is false.
+    /// </summary>
+    private static async Task<bool> RunAsync(
         string running,
         string done,
         string failed,
@@ -128,7 +132,7 @@ internal static class SftpTransfers
                 Message = "Files already copied were left in place.",
                 AutoDismissAfter = TimeSpan.FromSeconds(6),
             });
-            return;
+            return false;
         }
 
         if (result.ExitCode == 0)
@@ -140,7 +144,7 @@ internal static class SftpTransfers
                 Actions = doneActions,
                 AutoDismissAfter = TimeSpan.FromSeconds(8),
             });
-            return;
+            return true;
         }
 
         if (ScpFailure.Classify(result.Stderr) == ScpFailureKind.NeedsInteraction)
@@ -152,7 +156,7 @@ internal static class SftpTransfers
                 AutoDismissAfter = TimeSpan.FromSeconds(8),
             });
             runVisible(ScpCommand.ToCommandLine(ScpPath, visibleArgs));
-            return;
+            return false;
         }
 
         notices?.Show(new Notice
@@ -161,6 +165,7 @@ internal static class SftpTransfers
             Message = ScpFailure.Summarize(result.Stderr),
             Severity = NoticeSeverity.Error,
         });
+        return false;
     }
 
     private readonly record struct ScpResult(int ExitCode, string Stderr, bool Canceled);
